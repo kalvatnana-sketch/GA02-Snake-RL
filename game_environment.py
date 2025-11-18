@@ -11,7 +11,9 @@ import numpy as np
 from collections import deque
 import matplotlib.pyplot as plt
 import pickle
-import tensorflow as tf
+#import tensorflow as tf
+from agent import DeepQLearningAgent
+import torch
 
 class Position:
     """Class for defining any position on a 2D grid
