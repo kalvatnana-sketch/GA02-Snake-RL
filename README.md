@@ -5,15 +5,8 @@ Only the DQN agent is rewritten, while other classes not necessary for this proj
 
 Below are visualizations generated from my PyTorch-trained DQN model:
 
-<video width="400" controls>
-  <source src="images/game_visual_v17.1_163500_9.mp4" type="video/mp4">
-  Your browser does not support the video tag.
-</video>
+<img src="images/game_visual_v17.1_163500_oos_5.gif" width="400">
 
-<video width="400" controls>
-  <source src="images/game_visual_v17.1_163500_oos_9.mp4" type="video/mp4">
-  Your browser does not support the video tag.
-</video>
 
 ---
 
