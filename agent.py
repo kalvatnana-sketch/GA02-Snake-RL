@@ -1,6 +1,8 @@
 """
 store all the agents here
 """
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning, module="torch.nn.modules.lazy")
 from replay_buffer import ReplayBuffer, ReplayBufferNumpy
 import numpy as np
 import pickle
@@ -8,7 +10,7 @@ import json
 import torch
 import torch.nn as nn
 import torch.optim as optim
-from torchinfo import summary
+
 
 
 
@@ -18,57 +20,11 @@ class Agent():
     """Base class for all agents
     This class extends to the following classes
     DeepQLearningAgent
-    HamiltonianCycleAgent
-    BreadthFirstSearchAgent
-
-    Attributes
-    ----------
-    _board_size : int
-        Size of board, keep greater than 6 for useful learning
-        should be the same as the env board size
-    _n_frames : int
-        Total frames to keep in history when making prediction
-        should be the same as env board size
-    _buffer_size : int
-        Size of the buffer, how many examples to keep in memory
-        should be large for DQN
-    _n_actions : int
-        Total actions available in the env, should be same as env
-    _gamma : float
-        Reward discounting to use for future rewards, useful in policy
-        gradient, keep < 1 for convergence
-    _use_target_net : bool
-        If use a target network to calculate next state Q values,
-        necessary to stabilise DQN learning
-    _input_shape : tuple
-        Tuple to store individual state shapes
-    _board_grid : Numpy array
-        A square filled with values from 0 to board size **2,
-        Useful when converting between row, col and int representation
-    _version : str
-        model version string
     """
     def __init__(self, board_size=10, frames=2, buffer_size=10000,
                  gamma=0.99, n_actions=4, use_target_net=True,
                  version=''):
         """ initialize the agent
-
-        Parameters
-        ----------
-        board_size : int, optional
-            The env board size, keep > 6
-        frames : int, optional
-            The env frame count to keep old frames in state
-        buffer_size : int, optional
-            Size of the buffer, keep large for DQN
-        gamma : float, optional
-            Agent's discount factor, keep < 1 for convergence
-        n_actions : int, optional
-            Count of actions available in env
-        use_target_net : bool, optional
-            Whether to use target network, necessary for DQN convergence
-        version : str, optional except NN based models
-            path to the model architecture json
         """
         self._board_size = board_size
         self._n_frames = frames
@@ -119,21 +75,6 @@ class Agent():
 
     def add_to_buffer(self, board, action, reward, next_board, done, legal_moves):
         """Add current game step to the replay buffer
-
-        Parameters
-        ----------
-        board : Numpy array
-            Current state of the board, can contain multiple games
-        action : Numpy array or int
-            Action that was taken, can contain actions for multiple games
-        reward : Numpy array or int
-            Reward value(s) for the current action on current states
-        next_board : Numpy array
-            State obtained after executing action on current state
-        done : Numpy array or int
-            Binary indicator for game termination
-        legal_moves : Numpy array
-            Binary indicators for actions which are allowed at next states
         """
         self._buffer.add_to_buffer(board, action, reward, next_board, 
                                    done, legal_moves)
@@ -235,7 +176,7 @@ class DeepQLearningAgent(Agent):
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.reset_models()
 
-    def reset_models(self):
+    def reset_models(self): #initalizing q and target network 
         """ Reset all the models by creating new graphs"""
         self._model = self._agent_model().to(self.device)
         self.optimizer = torch.optim.Adam(self._model.parameters(), lr=1e-4) #optimizer
@@ -266,7 +207,7 @@ class DeepQLearningAgent(Agent):
         board = board.to(self.device)
         return board
 
-    def _get_model_outputs(self, board, model=None):
+    def _get_model_outputs(self, board, model=None): #normalising and reshaping input if needed + forward pass
         """Get Q values predictions from the DQN model for the goven state. 
         """
         # to correct dimensions and normalize
@@ -276,6 +217,11 @@ class DeepQLearningAgent(Agent):
         if model is None:
             model = self._model
         return model(board)
+   
+    def get_qvalues_numpy(self, board):
+        out = self._get_model_outputs(board, self._model)
+        return out.detach().cpu().numpy()[0].astype(float)
+
 
 
     def _normalize_board(self, board):
@@ -298,7 +244,7 @@ class DeepQLearningAgent(Agent):
         board = board.to(self.device)
         return board
 
-    def move(self, board, legal_moves, value=None):
+    #def move(self, board, legal_moves, value=None):
         """Get the action with maximum Q value
         
         Parameters
@@ -314,13 +260,24 @@ class DeepQLearningAgent(Agent):
             Selected action using the argmax function
         """
         # use the agent model to make the predictions
+       # model_outputs = self._get_model_outputs(board, self._model)
+       # legal_moves = torch.as_tensor(legal_moves, dtype=torch.float32, device=model_outputs.device)
+        #return torch.argmax(torch.where(legal_moves==1, model_outputs, -float("inf")), dim=1)
+
+    def move(self, board, legal_moves, value=None): # computing q values and mask out illegal moves
         model_outputs = self._get_model_outputs(board, self._model)
         legal_moves = torch.as_tensor(legal_moves, dtype=torch.float32, device=model_outputs.device)
-        return torch.argmax(torch.where(legal_moves==1, model_outputs, -float("inf")), dim=1)
+        masked = torch.where(legal_moves == 1, model_outputs, torch.tensor(-1e9, device=self.device))
+        action = torch.argmax(masked, dim=1)
+        if action.numel() > 1:
+            return action.detach().cpu().numpy()
+        return int(action.item())
 
 
 
-    def _agent_model(self):
+
+
+    def _agent_model(self): #builds CNN from the chosen JSON config 
         """Returns the model which evaluates Q values for a given state input
         Returns
         -------
@@ -372,17 +329,12 @@ class DeepQLearningAgent(Agent):
 
 
 
-    def get_action_proba(self, board, values=None):  #must be changed
-        """Returns the action probability values using the DQN model
-        """
-        model_outputs = self._get_model_outputs(board, self._model)
-        # subtracting max and taking softmax does not change output
-        # do this for numerical stability
-        model_outputs = torch.clamp(model_outputs, -10, 10)
-        model_outputs = model_outputs - model_outputs.max(dim=1).values.reshape(-1,1)
-        model_outputs = torch.exp(model_outputs)
-        model_outputs = model_outputs/model_outputs.sum(dim=1).reshape((-1,1))
-        return model_outputs
+    def get_action_proba(self, board, values=None):
+        out = self._get_model_outputs(board, self._model)
+        out = out.detach().cpu().numpy()[0]  # convert to numpy row
+        out = np.exp(out - np.max(out))
+        return out / np.sum(out)
+
 
     def save_model(self, file_path='', iteration=None):
         """Saving model wight with pytorch
@@ -422,7 +374,7 @@ class DeepQLearningAgent(Agent):
             #choose to stay with direct printing to avoid the need to install extra modules when its handed in.
 
     def train_agent(self, batch_size=64, num_games=1, reward_clip=False): #tried to change batchsize from 32 to 64 to allign with training
-    
+        # sample minibatch from replay buffer
         s, a, r, next_s, done, legal_moves = self._buffer.sample(batch_size)
 
         #Converting replay buffer outputs from numpy to tensors
@@ -459,26 +411,28 @@ class DeepQLearningAgent(Agent):
         # Expand to (batch, n_actions)
         discounted_reward = discounted_reward.expand(-1, self._n_actions)
 
-        # create the target variable, only the column with action has different value
+        # create the target tensor replace only the chosen actions q-value
         with torch.no_grad():
             target = self._get_model_outputs(
         s_torch,
         self._target_net if self._use_target_net else self._model
     )
-
-# now modify the selected action values
+# modify the selected action values
         target = (1 - a_torch_oh) * target + a_torch_oh * discounted_reward
 
-        # prediction
+        # forward pass to get predicted q values
         predicted = self._get_model_outputs(s_torch)
-        #loss
+        #loss and update network
         loss_function = torch.nn.MSELoss()
         loss = loss_function(predicted,  target) #pytorch functions instead of train on batch
         # optimizers
         self.optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
-        return loss
+       # return loss
+        return loss.detach()
+
+
 
     def update_target_net(self):
         """Update the weights of the target network, which is kept

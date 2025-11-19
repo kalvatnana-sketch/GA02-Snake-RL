@@ -13,6 +13,8 @@ import time
 from utils import play_game, play_game2
 from game_environment import Snake, SnakeNumpy
 import torch
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning, module="torch.nn.modules.lazy")
 from agent import DeepQLearningAgent
 import json
 
@@ -109,8 +111,14 @@ for index in tqdm(range(episodes)):
                        sample_actions=sample_actions, reward_type=reward_type,
                        frame_mode=True, total_frames=n_games_training, 
                        stateful=True)
-        loss = agent.train_agent(batch_size=64,
-                                 num_games=n_games_training, reward_clip=True)
+       # loss = agent.train_agent(batch_size=64,
+                               #  num_games=n_games_training, reward_clip=True)
+                
+        loss_tensor = agent.train_agent(batch_size=64, num_games=n_games_training, reward_clip=True)
+
+        loss = loss_tensor.item() if hasattr(loss_tensor, "item") else float(loss_tensor)
+
+
 
 
 
