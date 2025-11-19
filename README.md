@@ -3,7 +3,7 @@
 This is a PyTorch version of the DeepQLearningAgent class for the Snake environment that was originally written in TensorFlow.  
 Only the DQN agent is rewritten, while other classes not necessary for this project have been removed.
 
-Below are visualizations generated from my PyTorch-trained DQN model:
+Below are visualizations generated from the PyTorch-trained DQN model:
 
 <img src="images/game_visual_v17.1_163500_oos_5.gif" width="400">
 
